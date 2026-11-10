@@ -1,0 +1,68 @@
+services:
+  ollama:
+    image: ollama/ollama:0.40.10
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  chroma:
+    image: chromadb/chroma:1.5.9  # keep in sync with chromadb in requirements.txt
+    container_name: rag-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+
+  app:
+    build: .
+    image: rag-practice-app
+    container_name: rag-app
+    depends_on:
+      - ollama
+      - chroma
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: qwen2.5:3b
+      EMBED_MODEL: all-MiniLM-L6-v2
+    volumes:
+      # Whole directory, not individual files: a single-file bind mount keeps
+      # pointing at the old inode when an editor replaces the file on save.
+      - .:/app
+      - hf_cache:/root/.cache/huggingface
+    command: sleep infinity
+
+  ui:
+    image: rag-practice-app  # same image as app, built by the app service
+    container_name: rag-ui
+    depends_on:
+      - app
+      - ollama
+      - chroma
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: qwen2.5:3b
+      EMBED_MODEL: all-MiniLM-L6-v2
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - hf_cache:/root/.cache/huggingface
+    command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501 --server.headless=true
+
+volumes:
+  ollama_models:
+  chroma_data:
+  hf_cache:
